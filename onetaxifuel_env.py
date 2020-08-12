@@ -15,14 +15,13 @@ import numpy as np
 
 MAP = [
     "+---------+",
-    "|R: |F: :G|",
+    "|X: |F: :X|",
     "| : | : : |",
     "| : : : : |",
     "| | : | : |",
-    "|Y| : |B: |",
+    "|X| : |X: |",
     "+---------+",
 ]
-
 
 class OneTaxiFuelEnv(discrete.DiscreteEnv):
     """
@@ -74,16 +73,28 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
     """
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self):
-        self.desc = np.asarray(MAP, dtype='c')
+    def __init__(self, max_fuel=10, map=MAP):
+        self.desc = np.asarray(map, dtype='c')
 
-        self.locs = locs = [(0,0), (0,4), (4,0), (4,3)]
-        self.fuel_station = fuel_station = (0,2)
+        self.num_rows = num_rows = len(self.desc) - 2
+        self.num_columns = num_columns = len(self.desc[0][1:-1:2])
 
-        num_states = 5500
-        num_rows = 5
-        num_columns = 5
-        max_fuel = 10
+        self.locs = []
+        self.fuel_stations = []
+
+        for i,row in enumerate(self.desc[1:-1]):
+            for j,char in enumerate(row[1:-1:2]):
+                loc = [i,j]
+                if char == b'X':
+                    self.locs.append(loc)
+                elif char == b'F':
+                    self.fuel_stations.append(loc)
+
+        fuel_stations = self.fuel_stations
+        locs = self.locs
+
+        self.max_fuel = max_fuel
+        num_states = num_rows * num_columns * (max_fuel+1) * (len(locs)+1) * len(locs)
         max_row = num_rows - 1
         max_col = num_columns - 1
         initial_state_distrib = np.zeros(num_states)
@@ -103,7 +114,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                 new_row, new_col, new_pass_idx, new_fuel = row, col, pass_idx, fuel
                                 reward = -1 # default reward when there is no pickup/dropoff/refill
                                 done = False
-                                taxi_loc = (row, col)
+                                taxi_loc = [row, col]
 
                                 moved = False # indicates if fuel is consumed
 
@@ -138,7 +149,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                     else: # dropoff at wrong location
                                         reward = -10
                                 elif action == 6: # refill
-                                    if (taxi_loc == fuel_station):
+                                    if (taxi_loc in fuel_stations):
                                         new_fuel = 10
                                     else: # not at fuel station
                                         reward = -10
@@ -158,28 +169,28 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
     def encode(self, taxi_row, taxi_col, pass_loc, dest_idx, fuel):
         # (5) 5, 5, 4, 11
         i = taxi_row
-        i *= 5
+        i *= self.num_columns
         i += taxi_col
-        i *= 5
+        i *= (len(self.locs)+1)
         i += pass_loc
-        i *= 4
+        i *= len(self.locs)
         i += dest_idx
-        i *= 11
+        i *= (self.max_fuel+1)
         i += fuel
         return i
 
     def decode(self, i):
         out = []
-        out.append(i % 11)
-        i = i // 11
-        out.append(i % 4)
-        i = i // 4
-        out.append(i % 5)
-        i = i // 5
-        out.append(i % 5)
-        i = i // 5
+        out.append(i % (self.max_fuel+1))
+        i = i // (self.max_fuel+1)
+        out.append(i % len(self.locs))
+        i = i // len(self.locs)
+        out.append(i % (len(self.locs)+1))
+        i = i // (len(self.locs)+1)
+        out.append(i % self.num_columns)
+        i = i // self.num_columns
         out.append(i)
-        assert 0 <= i < 5
+        assert 0 <= i < self.num_rows
         return reversed(out)
 
     def render(self, mode='human'):
