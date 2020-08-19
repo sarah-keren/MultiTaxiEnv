@@ -9,6 +9,7 @@ from gym.envs.toy_text import discrete
 import numpy as np
 import itertools
 import random
+from .config import multitaxi_rewards
 
 MAP = [
     "+---------+",
@@ -132,7 +133,7 @@ class MultiTaxiEnv(gym.Env):
             taxi_loc = taxis[taxi]
             row, col = taxi_loc
 
-            reward = -1 # default reward when there is no pickup/dropoff
+            reward = multitaxi_rewards['step'] # default reward when there is no pickup/dropoff
             done = False
             
             # movement
@@ -152,22 +153,24 @@ class MultiTaxiEnv(gym.Env):
                     if loc == 0 and taxi_loc == pass_start[i] and taxi+1 not in pass_loc:
                         pass_loc[i] = taxi + 1
                         successful_pickup = True
+                        reward = multitaxi_rewards['pickup']
                         break   # Picks up first passenger, modify this if capacity increases
                 if not successful_pickup: # passenger not at location
-                    reward = -10
+                    reward = reward = multitaxi_rewards['bad_pickup']
             elif action == 5:  # dropoff
                 successful_dropoff = False
                 for i, loc in enumerate(pass_loc):  # at destination
                     if loc == taxi + 1 and taxi_loc == destinations[i]:
                         pass_loc[i] = -1
-                        reward = 20
+                        reward = multitaxi_rewards['final_dropoff']
                         successful_dropoff = True
                     elif loc == taxi + 1: # drops off passenger
                         pass_loc[i] = 0
                         pass_start[i] = taxi_loc
                         successful_dropoff = True
+                        reward = multitaxi_rewards['intermediate_dropoff']
                 if not successful_dropoff: # not carrying a passenger
-                    reward = -10
+                    reward =  reward = multitaxi_rewards['bad_dropoff']
 
                             
             taxis[taxi] = [row, col]
