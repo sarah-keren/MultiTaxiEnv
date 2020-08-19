@@ -91,7 +91,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                 elif char == b'F':
                     self.fuel_stations.append(loc)
 
-        fuel_station = self.fuel_stations
+        fuel_stations = self.fuel_stations
         locs = self.locs
 
         self.max_fuel = max_fuel
@@ -151,7 +151,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                     else: # dropoff at wrong location
                                         reward = taxifuel_rewards['bad_dropoff']
                                 elif action == 6: # refill
-                                    if (taxi_loc == fuel_station):
+                                    if (taxi_loc == fuel_stations):
                                         new_fuel = 10
                                     else: # not at fuel station
                                         reward = taxifuel_rewards['bad_refuel']
