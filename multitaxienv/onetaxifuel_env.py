@@ -91,7 +91,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                 elif char == b'F':
                     self.fuel_stations.append(loc)
 
-        fuel_stations = self.fuel_stations
+        fuel_station = self.fuel_stations
         locs = self.locs
 
         self.max_fuel = max_fuel
