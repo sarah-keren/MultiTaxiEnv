@@ -138,7 +138,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                 elif action == 4:  # pickup
                                     if (pass_idx < 4 and taxi_loc == locs[pass_idx]):
                                         new_pass_idx = 4
-                                        reward = multitaxifuel_rewards['pickup']
+                                        reward = taxifuel_rewards['pickup']
                                     else: # passenger not at location
                                         reward = taxifuel_rewards['bad_pickup']
                                 elif action == 5:  # dropoff
