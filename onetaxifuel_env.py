@@ -12,6 +12,7 @@ from io import StringIO
 from gym import utils
 from gym.envs.toy_text import discrete
 import numpy as np
+from .config import taxifuel_rewards
 
 MAP = [
     "+---------+",
@@ -112,9 +113,9 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                             for action in range(num_actions):
                                 # defaults
                                 new_row, new_col, new_pass_idx, new_fuel = row, col, pass_idx, fuel
-                                reward = -1 # default reward when there is no pickup/dropoff/refill
+                                reward = taxifuel_rewards['step'] # default reward when there is no pickup/dropoff/refill
                                 done = False
-                                taxi_loc = [row, col]
+                                taxi_loc = (row, col)
 
                                 moved = False # indicates if fuel is consumed
 
@@ -137,25 +138,26 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                 elif action == 4:  # pickup
                                     if (pass_idx < 4 and taxi_loc == locs[pass_idx]):
                                         new_pass_idx = 4
+                                        reward = multitaxifuel_rewards['pickup']
                                     else: # passenger not at location
-                                        reward = -10
+                                        reward = taxifuel_rewards['bad_pickup']
                                 elif action == 5:  # dropoff
                                     if (taxi_loc == locs[dest_idx]) and pass_idx == 4:
                                         new_pass_idx = dest_idx
                                         done = True
-                                        reward = 20
+                                        reward = taxifuel_rewards['dropoff']
                                     elif (taxi_loc in locs) and pass_idx == 4:
                                         new_pass_idx = locs.index(taxi_loc)
                                     else: # dropoff at wrong location
-                                        reward = -10
+                                        reward = taxifuel_rewards['bad_dropoff']
                                 elif action == 6: # refill
-                                    if (taxi_loc in fuel_stations):
+                                    if (taxi_loc == fuel_station):
                                         new_fuel = 10
                                     else: # not at fuel station
-                                        reward = -10
+                                        reward = taxifuel_rewards['bad_refuel']
                                 if moved:
                                     if fuel == 0:
-                                        reward = -10
+                                        reward = taxifuel_rewards['no_fuel']
                                     new_fuel = max(0, fuel - 1)
 
                                 new_state = self.encode(
