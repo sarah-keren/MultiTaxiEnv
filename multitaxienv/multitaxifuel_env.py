@@ -298,8 +298,7 @@ class MultiTaxiFuelEnv(gym.Env):
             observations.append(obs)
         return observations
 
-
     def get_num_jointactions(self):
-	    return (self.num_actions)**(len(self.agents))
+        return (self.num_actions)**(len(self.agents))
 
 
