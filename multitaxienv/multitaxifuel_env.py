@@ -300,6 +300,6 @@ class MultiTaxiFuelEnv(gym.Env):
 
 
     def get_num_jointactions(self):
-	return (self.num_actions)**(len(self.agents))
+	    return (self.num_actions)**(len(self.agents))
 
 
