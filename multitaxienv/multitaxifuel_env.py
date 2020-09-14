@@ -297,3 +297,9 @@ class MultiTaxiFuelEnv(gym.Env):
             obs = np.reshape(obs, [1, len(obs)])
             observations.append(obs)
         return observations
+
+
+    def get_num_jointactions(self):
+	return (self.num_actions)**(len(self.agents))
+
+
