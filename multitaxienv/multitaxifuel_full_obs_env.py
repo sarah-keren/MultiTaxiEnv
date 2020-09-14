@@ -115,7 +115,7 @@ class MultiTaxiFuelEnv(gym.Env):
 
         self.max_fuel = max_fuel
 
-        self.num_taxis = self.num_agents = num_taxis
+        self.num_taxis = num_taxis
         self.num_passengers = num_passengers    
 
         self.num_actions = 7
@@ -241,15 +241,13 @@ class MultiTaxiFuelEnv(gym.Env):
 
         def ul(x): return "_" if x == " " else x
         for i,loc in enumerate(pass_locs):
-            if loc > 0:     # passenger in taxi
+            if loc > 0:
                 taxi_row, taxi_col = taxis[loc-1]
                 out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
                     out[1 + taxi_row][2 * taxi_col + 1], colors[loc-1], highlight=True, bold=True)
                 colored[loc-1] = True
-            elif loc == 0:      # passenger not in taxi
+            else:  # passenger in taxi
                 pi, pj = pass_start[i]
-                if out[1 + pi][2 * pj + 1] != 'X':
-                    out[1 + pi][2 * pj + 1]  = 'P'
                 out[1 + pi][2 * pj + 1] = utils.colorize(out[1 + pi][2 * pj + 1], 'blue', bold=True)
 
         for i, taxi in enumerate(taxis):
@@ -264,7 +262,7 @@ class MultiTaxiFuelEnv(gym.Env):
         outfile.write("\n".join(["".join(row) for row in out]) + "\n")
 
         if self.lastaction is not None:
-            moves = ["South", "North", "East", "West", "Pickup", "Dropoff", "Refuel", "Nothing"]
+            moves = ["South", "North", "East", "West", "Pickup", "Dropoff", "Refuel"]
             output = [moves[i] for i in self.lastaction]
             outfile.write("  ({})\n".format(' ,'.join(output)))
         for i, taxi in enumerate(taxis):
@@ -284,16 +282,3 @@ class MultiTaxiFuelEnv(gym.Env):
             with closing(outfile):
                 return outfile.getvalue()
 
-
-    def partial_observations(self,state):
-        def flatten(x):
-            return [item for sub in x for item in sub]
-        observations = []
-        taxis, fuels, pass_start, dest, pass_loc = state
-        pass_info =  flatten(pass_start) + flatten(dest) + pass_loc
-    
-        for i in range(len(taxis)):
-            obs = taxis[i] + [fuels[i]] + pass_info
-            obs = np.reshape(obs, [1, len(obs)])
-            observations.append(obs)
-        return observations
