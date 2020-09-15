@@ -298,6 +298,17 @@ class MultiTaxiFuelEnv(gym.Env):
             observations.append(obs)
         return observations
 
+    def get_observation(self, state, agent_index):
+        def flatten(x):
+            return [item for sub in x for item in sub]
+
+        taxis, fuels, pass_start, dest, pass_loc = state
+        pass_info = flatten(pass_start) + flatten(dest) + pass_loc
+
+        obs = taxis[agent_index] + [fuels[agent_index]] + pass_info
+        obs = np.reshape(obs, [1, len(obs)])
+        return obs
+
     def get_num_jointactions(self):
         return (self.num_actions)**(self.num_agents)
 
