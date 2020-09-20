@@ -57,8 +57,11 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
     - 3: move west
     - 4: pickup passenger
     - 5: dropoff passenger
-    - 6: standby
-    - 7: refill fuel tank to 10
+    - 6: turn-off engine
+    - 7: standby engine off
+    - 8: turn-on engine
+    - 9: standby engine on
+    - 10: refill fuel tank to 10
 
     Rewards:
     There is a reward of -1 for each action and an additional reward of +20 for delivering the passenger. There is a reward of -10 for executing actions "pickup", "dropoff", "refill" illegally.
@@ -100,7 +103,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
         max_row = num_rows - 1
         max_col = num_columns - 1
         initial_state_distrib = np.zeros(num_states)
-        num_actions = 8
+        num_actions = 11
         P = {state: {action: []
                      for action in range(num_actions)} for state in range(num_states)}
         for row in range(num_rows):
@@ -109,6 +112,7 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                     for dest_idx in range(len(locs)):
                         for fuel in range(max_fuel + 1):  # +1 for 0 fuel
                             state = self.encode(row, col, pass_idx, dest_idx, fuel)
+                            is_engine_on = True
                             if pass_idx < 4 and pass_idx != dest_idx and fuel == max_fuel:
                                 initial_state_distrib[state] += 1
                             for action in range(num_actions):
@@ -118,50 +122,59 @@ class OneTaxiFuelEnv(discrete.DiscreteEnv):
                                     'step']  # default reward when there is no pickup/dropoff/refill
                                 done = False
                                 taxi_loc = (row, col)
+                                moved = False       # indicates if fuel is consumed
+                                if not is_engine_on:
+                                    if action == 7:     # standby while engine is off
+                                        reward = taxifuel_rewards['standby_engine_off']
+                                    elif action == 8:     # turn engine on
+                                        reward = taxifuel_rewards['turn_engine_on']
+                                        is_engine_on = True
 
-                                moved = False  # indicates if fuel is consumed
-
-                                if action == 0:  # south
-                                    new_row = min(row + 1, max_row)
-                                    if row != max_row:
-                                        moved = True
-                                elif action == 1:  # north
-                                    new_row = max(row - 1, 0)
-                                    if row != 0:
-                                        moved = True
-                                if action == 2 and self.desc[1 + row, 2 * col + 2] == b":":  # east, no wall
-                                    new_col = min(col + 1, max_col)
-                                    if col != max_col:
-                                        moved = True
-                                elif action == 3 and self.desc[1 + row, 2 * col] == b":":  # west, no wall
-                                    new_col = max(col - 1, 0)
-                                    if col != 0:
-                                        moved = True
-                                elif action == 4:  # pickup
-                                    if (pass_idx < 4 and taxi_loc == locs[pass_idx]):
-                                        new_pass_idx = 4
-                                        reward = taxifuel_rewards['pickup']
-                                    else:  # passenger not at location
-                                        reward = taxifuel_rewards['bad_pickup']
-                                elif action == 5:  # dropoff
-                                    if (taxi_loc == locs[dest_idx]) and pass_idx == 4:
-                                        new_pass_idx = dest_idx
-                                        done = True
-                                        reward = taxifuel_rewards['dropoff']
-                                    elif (taxi_loc in locs) and pass_idx == 4:
-                                        new_pass_idx = locs.index(taxi_loc)
-                                    else:  # dropoff at wrong location
-                                        reward = taxifuel_rewards['bad_dropoff']
-                                elif action == 6:  # standby
-                                    pass
-                                elif action == 7:  # refill
-                                    if (taxi_loc == fuel_stations):
-                                        new_fuel = 10
-                                    else:  # not at fuel station
-                                        reward = taxifuel_rewards['bad_refuel']
-                                if moved:
-                                    if fuel == 0:
-                                        reward = taxifuel_rewards['no_fuel']
+                                else:   # engine is on
+                                    if action == 0:  # south
+                                        new_row = min(row + 1, max_row)
+                                        if row != max_row:
+                                            moved = True
+                                    elif action == 1:  # north
+                                        new_row = max(row - 1, 0)
+                                        if row != 0:
+                                            moved = True
+                                    if action == 2 and self.desc[1 + row, 2 * col + 2] == b":":  # east, no wall
+                                        new_col = min(col + 1, max_col)
+                                        if col != max_col:
+                                            moved = True
+                                    elif action == 3 and self.desc[1 + row, 2 * col] == b":":  # west, no wall
+                                        new_col = max(col - 1, 0)
+                                        if col != 0:
+                                            moved = True
+                                    elif action == 4:  # pickup
+                                        if (pass_idx < 4 and taxi_loc == locs[pass_idx]):
+                                            new_pass_idx = 4
+                                            reward = taxifuel_rewards['pickup']
+                                        else:  # passenger not at location
+                                            reward = taxifuel_rewards['bad_pickup']
+                                    elif action == 5:  # dropoff
+                                        if (taxi_loc == locs[dest_idx]) and pass_idx == 4:
+                                            new_pass_idx = dest_idx
+                                            done = True
+                                            reward = taxifuel_rewards['dropoff']
+                                        elif (taxi_loc in locs) and pass_idx == 4:
+                                            new_pass_idx = locs.index(taxi_loc)
+                                        else:  # dropoff at wrong location
+                                            reward = taxifuel_rewards['bad_dropoff']
+                                    elif action == 6:     # turn engine off
+                                        reward = taxifuel_rewards['turn_engine_off']
+                                        is_engine_on = False
+                                    elif action == 10:  # refill
+                                        if (taxi_loc == fuel_stations):
+                                            new_fuel = 10
+                                        else:  # not at fuel station
+                                            reward = taxifuel_rewards['bad_refuel']
+                                    elif action == 9:
+                                        reward = taxifuel_rewards['standby_engine_on']
+                                    if moved:
+                                        if fuel == 0:
+                                            reward = taxifuel_rewards['no_fuel']
                                     new_fuel = max(0, fuel - 1)
 
                                 new_state = self.encode(

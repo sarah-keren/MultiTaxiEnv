@@ -71,8 +71,11 @@ class MultiTaxiFuelEnv(gym.Env):
     - 3: move west
     - 4: pickup passenger
     - 5: dropoff passenger
-    - 6: standby
-    - 7: refuel fuel tank
+    - 6: standby while engine is off
+    - 7: turn engine on
+    - 8: turn engine off
+    - 9: standby engine on
+    - 10: refuel fuel tank
 
 
     Rewards:
@@ -117,9 +120,10 @@ class MultiTaxiFuelEnv(gym.Env):
         self.max_fuel = max_fuel
 
         self.num_taxis = num_taxis
+        self.is_engine_on = list(np.ones(num_taxis).astype(bool))
         self.num_passengers = num_passengers
 
-        self.num_actions = 8
+        self.num_actions = 11
         self.action_space = gym.spaces.MultiDiscrete([8 for _ in range(self.num_taxis)])
         self.lastaction = None
 
@@ -150,63 +154,75 @@ class MultiTaxiFuelEnv(gym.Env):
             taxi_loc = taxis[taxi]
             row, col = taxi_loc
             fuel = fuels[taxi]
+            is_engine_on = self.is_engine_on[taxi]
 
             reward = multitaxifuel_rewards['step']  # default reward when there is no pickup/dropoff
             done = False
             moved = False
 
-            # movement
-            if action == 0:  # south
-                if row != max_row:
-                    moved = True
-                row = min(row + 1, max_row)
-            elif action == 1:  # north
-                if row != 0:
-                    moved = True
-                row = max(row - 1, 0)
-            if action == 2 and self.desc[1 + row, 2 * col + 2] == b":":  # east
-                if col != max_col:
-                    moved = True
-                col = min(col + 1, max_col)
-            elif action == 3 and self.desc[1 + row, 2 * col] == b":":  # west
-                if col != 0:
-                    moved = True
-                col = max(col - 1, 0)
+            if not is_engine_on:
+                if action == 6:  # standby while engine is off
+                    reward = multitaxifuel_rewards['standby_engine_off']
+                elif action == 7:  # turn engine on
+                    reward = multitaxifuel_rewards['turn_engine_on']
+                    self.is_engine_on[taxi] = True
 
-            # pickup/dropoff
-            elif action == 4:  # pickup
-                successful_pickup = False
-                for i, loc in enumerate(pass_loc):
-                    if loc == 0 and taxi_loc == pass_start[i] and taxi + 1 not in pass_loc:
-                        pass_loc[i] = taxi + 1
-                        successful_pickup = True
-                        reward = multitaxifuel_rewards['pickup']
-                        break  # Picks up first passenger, modify this if capacity increases
-                if not successful_pickup:  # passenger not at location
-                    reward = multitaxifuel_rewards['bad_pickup']
-            elif action == 5:  # dropoff
-                successful_dropoff = False
-                for i, loc in enumerate(pass_loc):  # at destination
-                    if loc == taxi + 1 and taxi_loc == destinations[i]:
-                        pass_loc[i] = -1
-                        reward = multitaxifuel_rewards['final_dropoff']
-                        successful_dropoff = True
-                    elif loc == taxi + 1:  # drops off passenger
-                        pass_loc[i] = 0
-                        pass_start[i] = taxi_loc
-                        successful_dropoff = True
-                        reward = multitaxifuel_rewards['intermediate_dropoff']
-                if not successful_dropoff:  # not carrying a passenger
-                    reward = multitaxifuel_rewards['bad_dropoff']
-            elif action == 6:
-                pass
+            elif is_engine_on:
+                # movement
+                if action == 0:  # south
+                    if row != max_row:
+                        moved = True
+                    row = min(row + 1, max_row)
+                elif action == 1:  # north
+                    if row != 0:
+                        moved = True
+                    row = max(row - 1, 0)
+                if action == 2 and self.desc[1 + row, 2 * col + 2] == b":":  # east
+                    if col != max_col:
+                        moved = True
+                    col = min(col + 1, max_col)
+                elif action == 3 and self.desc[1 + row, 2 * col] == b":":  # west
+                    if col != 0:
+                        moved = True
+                    col = max(col - 1, 0)
 
-            # taxi refuel
-            elif action == 7:
-                if taxi_loc in self.fuel_stations:
-                    fuel = self.max_fuel
-                else:
-                    reward = multitaxifuel_rewards['bad_refuel']
+                # pickup/dropoff
+                elif action == 4:  # pickup
+                    successful_pickup = False
+                    for i, loc in enumerate(pass_loc):
+                        if loc == 0 and taxi_loc == pass_start[i] and taxi + 1 not in pass_loc:
+                            pass_loc[i] = taxi + 1
+                            successful_pickup = True
+                            reward = multitaxifuel_rewards['pickup']
+                            break  # Picks up first passenger, modify this if capacity increases
+                    if not successful_pickup:  # passenger not at location
+                        reward = multitaxifuel_rewards['bad_pickup']
+                elif action == 5:  # dropoff
+                    successful_dropoff = False
+                    for i, loc in enumerate(pass_loc):  # at destination
+                        if loc == taxi + 1 and taxi_loc == destinations[i]:
+                            pass_loc[i] = -1
+                            reward = multitaxifuel_rewards['final_dropoff']
+                            successful_dropoff = True
+                        elif loc == taxi + 1:  # drops off passenger
+                            pass_loc[i] = 0
+                            pass_start[i] = taxi_loc
+                            successful_dropoff = True
+                            reward = multitaxifuel_rewards['intermediate_dropoff']
+                    if not successful_dropoff:  # not carrying a passenger
+                        reward = multitaxifuel_rewards['bad_dropoff']
+                    # Turning engine off
+                    elif action == 8:
+                        reward = multitaxifuel_rewards['turn_engine_off']
+                        self.is_engine_on[taxi] = False
+                    elif action == 9:  # standing by engine is on
+                        reward = multitaxifuel_rewards['standby_engine_on']
+                    # taxi refuel
+                    elif action == 10:
+                        if taxi_loc in self.fuel_stations:
+                            fuel = self.max_fuel
+                        else:
+                            reward = multitaxifuel_rewards['bad_refuel']
 
             # fuel consumption
             if moved:
