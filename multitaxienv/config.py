@@ -1,4 +1,4 @@
-taxifuel_rewards = dict(
+taxifuel_rewards_w_idle = dict(
     step = -1,
     no_fuel = -10,
     bad_pickup = -10,
@@ -12,7 +12,7 @@ taxifuel_rewards = dict(
     standby_engine_on = -1,
 )
 
-multitaxi_rewards = dict(
+multitaxi_rewards_w_idle = dict(
     step = -1,
     bad_pickup = -10,
     bad_dropoff = -10,
@@ -26,7 +26,7 @@ multitaxi_rewards = dict(
     bad_refuel = -10,
 )
 
-multitaxifuel_rewards = dict(
+multitaxifuel_rewards_w_idle = dict(
     step = -1,
     no_fuel = -10,
     bad_pickup = -10,
