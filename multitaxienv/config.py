@@ -61,6 +61,7 @@ multitaxi_rewards = dict(
     final_dropoff = 100,
 )
 
+# TODO - change name of global reward table, add rewards for: collision
 multitaxifuel_rewards = dict(
     step = -1,
     no_fuel = -10,
@@ -72,3 +73,12 @@ multitaxifuel_rewards = dict(
     final_dropoff = 100,
     hit_wall = -20,
 )
+
+all_action_names = ['south', 'north', 'east', 'west',
+                        'pickup', 'dropoff',
+                        'turn_engine_on', 'turn_engine_off',
+                        'standby',
+                        'refuel']
+
+base_available_actions = ['south', 'north', 'east', 'west',
+                             'pickup', 'dropoff']
