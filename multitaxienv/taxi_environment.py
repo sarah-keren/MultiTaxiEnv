@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# TODO-3 - Update notebook
+# TODO - Refactor te code (comments, optimize function calls, variables-name)
+# TODO - Update Notebook
 
 import sys
 
@@ -150,6 +151,7 @@ class TaxiEnv(gym.Env):
         self.engine_status_list = list(np.ones(num_taxis).astype(bool))
         self.num_passengers = num_passengers
 
+        self.available_actions_indexes, self.index_action_dictionary = self.set_available_actions_dictionary()
         self.num_actions = len(self.get_available_actions_dictionary()[0])
         self.action_space = gym.spaces.MultiDiscrete([self.num_actions for _ in range(self.num_taxis)])
         self.lastaction = None
@@ -197,8 +199,8 @@ class TaxiEnv(gym.Env):
         self.engine_status_list = list(np.ones(self.num_taxis))
         return self.state
 
-    def get_available_actions_dictionary(self) -> [list, dict]:
-        """                    self.passengers_locations.append(loc)
+    def set_available_actions_dictionary(self) -> (list, dict):
+        """
 
         TODO: Later versions - maybe return an action-dictionary for each taxi individually.
 
@@ -224,8 +226,28 @@ class TaxiEnv(gym.Env):
         action_index_dictionary = dict((value, key) for key, value in base_dictionary.items())
         available_actions_indexes = [action_index_dictionary[action] for action in action_index_dictionary_available_list]
         index_action_dictionary = dict((key, value) for key, value in base_dictionary.items())
-
         return available_actions_indexes, index_action_dictionary
+
+    def get_available_actions_dictionary(self) -> (list, dict):
+        """
+
+        TODO: Later versions - maybe return an action-dictionary for each taxi individually.
+
+        Returns a dictionary of all possible actions,
+        based on the hyper-parameters passed to __init__
+        Returns: dictionary of action_number : action_name and available action_indexes
+
+        """
+        return self.available_actions_indexes, self.index_action_dictionary
+
+    def is_place_on_taxi(self, passengares_locations: np.array, taxi_index: int) -> bool:
+        """
+
+        :param passengares_locations: array with locations of passengers (as described in __init__)
+        :param taxi_index: taxi to check capacity
+        :return: True/ False whether there is a place or not
+        """
+        return passengares_locations[passengares_locations == (taxi_index + 1)].shape[0] < self.taxis_capacity[i]
 
     def step(self, actions: list) -> tuple:
         """
@@ -300,23 +322,22 @@ class TaxiEnv(gym.Env):
                 elif index_action_dictionary[action] == 'pickup':  # pickup
                     successful_pickup = False
                     for i, loc in enumerate(pass_loc):
-                        if loc == 0 and taxi_loc == pass_start[i] and taxi + 1 not in pass_loc:
-                            pass_loc = taxi + 1
+                        if loc == 0 and taxi_loc == pass_start[i] and self.is_place_on_taxi(pass_loc, taxi):
+                            pass_loc[i] = taxi + 1
                             successful_pickup = True
                             reward = multitaxifuel_rewards_w_idle['pickup']
-                            break  # Picks up first passenger, modify this if capacity increases
                     if not successful_pickup:  # passenger not at location
                         reward = multitaxifuel_rewards_w_idle['bad_pickup']
                 elif index_action_dictionary[action] == 'dropoff':  # dropoff
                     successful_dropoff = False
                     for i, loc in enumerate(pass_loc):  # at destination
                         if loc == taxi + 1 and taxi_loc == destinations[i]:
-                            pass_loc = -1
+                            pass_loc[i] = -1
                             reward = multitaxifuel_rewards_w_idle['final_dropoff']
                             successful_dropoff = True
                         elif loc == taxi + 1:  # drops off passenger
                             self.passengers_locations[i] = 0
-                            pass_loc = taxi_loc
+                            pass_loc[i] = taxi_loc
                             successful_dropoff = True
                             reward = multitaxifuel_rewards_w_idle['intermediate_dropoff']
                     if not successful_dropoff:  # not carrying a passenger
@@ -353,6 +374,10 @@ class TaxiEnv(gym.Env):
 
             # check if all taxis collided
             done = all(self.collided == 1)
+            self.dones.append(done)
+
+            # check if all taxis are out of fuel
+            done = all(np.array(fuels) == 0)
             self.dones.append(done)
 
             rewards.append(reward)
@@ -407,7 +432,9 @@ class TaxiEnv(gym.Env):
             output = [moves[i] for i in self.lastaction]
             outfile.write("  ({})\n".format(' ,'.join(output)))
         for i, taxi in enumerate(taxis):
-            outfile.write("Taxi{}: Fuel: {}, Location: ({},{})\n".format(i + 1, fuels[i], taxi[0], taxi[1]))
+            outfile.write("Taxi{}-{}: Fuel: {}, Location: ({},{}), Collided: {}\n".format(i + 1, colors[i],
+                                                                                          fuels[i], taxi[0], taxi[1],
+                                                                                          self.collided[i] == 1))
         for i, loc in enumerate(pass_locs):
             start = tuple(pass_start[i])
             end = tuple(destinations[i])
