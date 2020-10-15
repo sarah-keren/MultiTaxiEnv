@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# TODO - Refactor te code (comments, optimize function calls, variables-name)
 # TODO - Update Notebook
 
 import sys
@@ -14,7 +13,7 @@ from gym.envs.toy_text import discrete
 import numpy as np
 import itertools
 import random
-from .config import multitaxifuel_rewards_w_idle, base_available_actions, all_action_names
+from .config import taxi_env_rewards, base_available_actions, all_action_names
 
 MAP = [
     "+---------+",
@@ -36,16 +35,19 @@ class TaxiEnv(gym.Env):
     There are four designated locations in the grid world indicated by R(ed), G(reen), Y(ellow), and B(lue).
     When the episode starts, the taxi starts off at a random square and the passenger is at a random location.
     The taxi drives to the passenger's location, picks up the passenger, drives to the passenger's destination
-    (another one of the four specified locations), and then drops off the passenger. Once the passenger is dropped off, the episode ends.
+    (another one of the four specified locations), and then drops off the passenger. Once the passenger is dropped off,
+    the episode ends.
 
     Observations:
     A list (taxis, fuels, pass_start, destinations, pass_locs):
-        taxis: a list of coordinates of each taxi
-        fuels: a list of fuels for each taxi
-        pass_start: a list of startinig coordinates for each passenger (current position or last available)
-        destinations: a list of destination coordiniates for each passenger
-        pass_locs: a list of locations of each passenger. -1 means delivered, 0 means not picked up, and positive number means the passenger
-                    is in the corresponding taxi number
+        taxis:                  a list of coordinates of each taxi
+        fuels:                  a list of fuels for each taxi
+        pass_start:             a list of startinig coordinates for each passenger (current position or last available)
+        destinations:           a list of destination coordiniates for each passenger
+        passengers_locations:   a list of locations of each passenger.
+                                -1 means delivered
+                                0 means not picked up
+                                positive number means the passenger is in the corresponding taxi number
 
     Passenger start: coordinates of each of these
     - -1: In a taxi
@@ -66,7 +68,7 @@ class TaxiEnv(gym.Env):
     - 3: B(lue)
 
     Fuel:
-     - 0 to 10: start with 10
+     - 0 to np.inf: default with 10
 
     Actions:
     Actions are given as a list, each element referring to one taxi's action. Each taxi has 7 actions:
@@ -83,8 +85,7 @@ class TaxiEnv(gym.Env):
 
 
     Rewards:
-    There is a reward of -1 for each action and an additional reward of +20 for delivering the passenger.
-    There is a reward of -10 for executing actions "pickup", "dropoff", and "refuel" illegally.
+    - Those are specified in the config file.
 
     Rendering:
     - blue: passenger
@@ -97,27 +98,48 @@ class TaxiEnv(gym.Env):
 
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self, num_taxis: int = 2, num_passengers: int = 2, max_fuel: list = [np.inf, np.inf],
-                 map: list = MAP, taxis_capacity: list = [1, 1], collision_limit: bool = False,
-                 fuel_type_list: list = ['F', 'F'], option_to_stand_by: bool = True):
+    def __init__(self, num_taxis: int = 2, num_passengers: int = 2, max_fuel: list = None,
+                 domain_map: list = None, taxis_capacity: list = None, collision_sensitive_domain: bool = False,
+                 fuel_type_list: list = None, option_to_stand_by: bool = True):
         """
         TODO -  later version make number of passengers dynamic, even in runtime
-
         Args:
-            num_taxis: number of taxis occupy the environment
-            num_passengers: number of passengers to deliver
-            max_fuel: list of the maximum fuel of each taxi
-            map: coordinated map of the environment
-            taxis_capacity: list of max_capacity of each taxi
-            collision_limit: is the environment tries prevent (active) collisions (True) of not (ignores) (False)
-            fuel_type_list: fuel type of each taxi
-            option_to_stand_by: does a taxi can standby
+            num_taxis: number of taxis in the domain
+            num_passengers: number of passengers occupying the domain
+            max_fuel: list of max and starting fuel, we use np.inf as default for fuel free taxi.
+            domain_map: map of the domain
+            taxis_capacity: max capacity of passengers in each taxi (list)
+            collision_sensitive_domain: is the domain show and react (true) to collisions or not (false)
+            fuel_type_list: list of fuel types of each taxi
+            option_to_stand_by: can taxis simply stand in place
         """
-        self.desc = np.asarray(map, dtype='c')
 
+        # Initializing default value
+        if max_fuel is None:
+            self.max_fuel = [np.inf] * num_passengers
+        else:
+            self.max_fuel = max_fuel
+
+        if domain_map is None:
+            self.desc = np.asarray(MAP, dtype='c')
+        else:
+            self.desc = np.asarray(domain_map, dtype='c')
+
+        if taxis_capacity is None:
+            self.taxis_capacity = [1] * num_passengers
+        else:
+            self.taxis_capacity = taxis_capacity
+
+        if fuel_type_list is None:
+            self.fuel_type_list = ['F'] * num_passengers
+        else:
+            self.fuel_type_list = fuel_type_list
+
+        # Relevant features for map boundaries, notice that we can only drive between the columns (':')
         self.num_rows = num_rows = len(self.desc) - 2
         self.num_columns = num_columns = len(self.desc[0][1:-1:2])
 
+        # Set locations of passengers and fuel stations according to the map.
         self.passengers_locations = []
         self.fuel_station1 = None
         self.fuel_station2 = None
@@ -137,28 +159,31 @@ class TaxiEnv(gym.Env):
 
         self.coordinates = [[i, j] for i in range(num_rows) for j in range(num_columns)]
 
-        self.max_fuel = max_fuel
-
         self.num_taxis = num_taxis
-        self.taxis_capacity = taxis_capacity
-        self.fuel_type_list = fuel_type_list
 
-        self.collission_limit = collision_limit
+        self.collision_sensitive_domain = collision_sensitive_domain
+
+        # Indicator list of 1's (collided) and 0's (not-collided) of all taxis
         self.collided = np.zeros(num_taxis)
+
         self.option_to_standby = option_to_stand_by
 
         # A list to indicate wether the engine of taxi i is on (1) or off (0), all taxis start as on.
         self.engine_status_list = list(np.ones(num_taxis).astype(bool))
         self.num_passengers = num_passengers
 
-        self.available_actions_indexes, self.index_action_dictionary = self.set_available_actions_dictionary()
-        self.num_actions = len(self.get_available_actions_dictionary()[0])
+        # Available actions in relation to all actions based on environment parameters.
+        self.available_actions_indexes, self.index_action_dictionary, self.action_index_dictionary \
+            = self.set_available_actions_dictionary()
+        self.num_actions = len(self.available_actions_indexes)
         self.action_space = gym.spaces.MultiDiscrete([self.num_actions for _ in range(self.num_taxis)])
-        self.lastaction = None
+        self.last_action = None
 
         self.seed()
         self.state = None
         self.dones = []
+
+        self.np_random = None
 
     def seed(self, seed=None) -> list:
         """
@@ -188,190 +213,231 @@ class TaxiEnv(gym.Env):
         """
         taxis_locations = random.sample(self.coordinates, self.num_taxis)
         fuels = [self.max_fuel[i] for i in range(self.num_taxis)]
+
         passengers_start_location = [start for start in
                                      random.choices(self.passengers_locations, k=self.num_passengers)]
-        passengers_destinations = [random.choice([x for x in self.passengers_locations if x != start]) for start in
-                                   passengers_start_location]
-        # Status of each passenger: deliverd, in_taxi, waiting
+        passengers_destinations = [random.choice([x for x in self.passengers_locations if x != start])
+                                   for start in passengers_start_location]
+
+        # Status of each passenger: deliverd (-1), in_taxi (positive number), waiting (0)
         passengers_status = [0 for _ in range(self.num_passengers)]
         self.state = [taxis_locations, fuels, passengers_start_location, passengers_destinations, passengers_status]
 
-        self.lastaction = None
+        self.last_action = None
         # Turning all engines on
         self.engine_status_list = list(np.ones(self.num_taxis))
+
         return self.state
 
-    def set_available_actions_dictionary(self) -> (list, dict):
+    def set_available_actions_dictionary(self) -> (list, dict, dict):
         """
 
         TODO: Later versions - maybe return an action-dictionary for each taxi individually.
 
-        Generate a dictionary of all possible actions,
-        based on the hyper-parameters passed to __init__
-        Returns: dictionary of action_number : action_name and available action_indexes
+        Generates list of all available actions in the parametrized domain, index->action dictionary to decode.
+        Generation is based on the hyper-parameters passed to __init__ + parameters defined in config.py
+
+        Returns: list of available actions, index->action dictionary for all actions and the reversed dictionary.
 
         """
 
-        action_names = all_action_names
-        base_dictionary = {}  # total dictionary
+        action_names = all_action_names  # From config.py
+        base_dictionary = {}  # Total dictionary{index -> action_name}
         for index, action in enumerate(action_names):
             base_dictionary[index] = action
 
-        action_index_dictionary_available_list = base_available_actions
+        available_action_list = base_available_actions  # From config.py
 
         if self.option_to_standby:
-            action_index_dictionary_available_list += ['turn_engine_on', 'turn_engine_off', 'standby']
+            available_action_list += ['turn_engine_on', 'turn_engine_off', 'standby']
 
+        # TODO - when we return dictionary per taxi we can't longer assume that on np.inf fuel
+        #  means no limitted fuel for all the taxis
         if not self.max_fuel[0] == np.inf:
-            action_index_dictionary_available_list.append('refuel')
+            available_action_list.append('refuel')
 
-        action_index_dictionary = dict((value, key) for key, value in base_dictionary.items())
-        available_actions_indexes = [action_index_dictionary[action] for action in
-                                     action_index_dictionary_available_list]
+        action_index_dictionary = dict((value, key) for key, value in base_dictionary.items())  # {action -> index} all
+        available_actions_indexes = [action_index_dictionary[action] for action in available_action_list]
         index_action_dictionary = dict((key, value) for key, value in base_dictionary.items())
-        return available_actions_indexes, index_action_dictionary
+
+        return available_actions_indexes, index_action_dictionary, action_index_dictionary
 
     def get_available_actions_dictionary(self) -> (list, dict):
         """
 
         TODO: Later versions - maybe return an action-dictionary for each taxi individually.
 
-        Returns a dictionary of all possible actions,
-        based on the hyper-parameters passed to __init__
-        Returns: dictionary of action_number : action_name and available action_indexes
+        Returns: list of available actions and index->action dictionary for all actions.
 
         """
         return self.available_actions_indexes, self.index_action_dictionary
 
-    def is_place_on_taxi(self, passengares_locations: np.array, taxi_index: int) -> bool:
+    def is_place_on_taxi(self, passengers_locations: np.array, taxi_index: int) -> bool:
         """
+        Checks if on taxi number 'taxi_index' there is room for another passenger.
+        Args:
+            passengers_locations: list of all passengers locations
+            taxi_index: index of the desired taxi
 
-        :param passengares_locations: array with locations of passengers (as described in __init__)
-        :param taxi_index: taxi to check capacity
-        :return: True/ False whether there is a place or not
-        """
-        return passengares_locations[passengares_locations == (taxi_index + 1)].shape[0] < self.taxis_capacity[i]
+        Returns: Whether there is a place (True) or not (False)
 
-    def step(self, actions: list) -> tuple:
         """
-        Taking list of actions in the environment's current state.
+        return len([location for location in passengers_locations if location == (taxi_index + 1)]) < \
+               self.taxis_capacity[taxi_index]
+
+    def at_valid_fuel_station(self, taxi: int, taxis_locations: list) -> bool:
+        """
+        Checks if the taxi's location is a suitable fuel station or not.
+        Args:
+            taxi: the desirable taxi
+            taxis_locations: list of taxis coordinates
+        Returns: whether the taxi is at a suitable fuel station (true) or not (false)
+
+        """
+        return (taxis_locations[taxi] in self.fuel_stations and
+                self.desc[taxis_locations[taxi]] == self.fuel_type_list[taxi])
+
+    def step(self, actions: list) -> (list, list, bool):
+        """
+        TODO - add an option to choose whether to execute in joint/serialized manner.
+        Executing a list of actions (action for each taxi) at the domain current state.
+        Supports not-joined actions, just pass 1 element instead of list.
+
         actions[i] is the action of taxi i.
         Args:
-            actions: list[str] - list of actions to take.
+            actions: list[int] - list of actions to take.
 
         Returns: list of next_state, reward_collected, is_done
         """
+        # Boundaries to check if "hit a wall" occurred and calculate movement
         max_row = self.num_rows - 1
         max_col = self.num_columns - 1
+
         rewards = []
+
+        # Main of the function, for each taxi-i act on action[i]
         for taxi, action in enumerate(actions):
+            reward = taxi_env_rewards['step']  # Default reward
+            moved = False  # Indicator variable for later use
+            # If the taxi collided, it can't perform a step
             if self.collided[taxi] == 1:
                 continue
-            taxis, fuels, pass_start, destinations, pass_loc = self.state
-            taxi_loc = taxis[taxi]
-            row, col = taxi_loc
+
+            taxis_locations, fuels, passengers_start_locations, destinations, passengers_locations = self.state
+
+            # If the taxi is out of fuel, it can't perform a step
+            if fuels[taxi] == 0 and not self.at_valid_fuel_station(taxi, taxis_locations):
+                continue
+
+            taxi_location = taxis_locations[taxi]
+            row, col = taxi_location
             fuel = fuels[taxi]
-            is_engine_on = self.engine_status_list[taxi]
+            is_taxi_engine_on = self.engine_status_list[taxi]
             _, index_action_dictionary = self.get_available_actions_dictionary()
 
-            reward = multitaxifuel_rewards_w_idle['step']  # default reward when there is no pickup/dropoff
-            moved = False
-
-            if not is_engine_on:
+            if not is_taxi_engine_on:  # Engine is off
                 if index_action_dictionary[action] == 'standby':  # standby while engine is off
-                    reward = multitaxifuel_rewards_w_idle['standby_engine_off']
+                    reward = taxi_env_rewards['standby_engine_off']
                 elif index_action_dictionary[action] == 'turn_engine_on':  # turn engine on
-                    reward = multitaxifuel_rewards_w_idle['turn_engine_on']
+                    reward = taxi_env_rewards['turn_engine_on']
                     self.engine_status_list[taxi] = 1
 
-            elif is_engine_on:
-                col_to = col
-                row_to = row
-                # movement
+            elif is_taxi_engine_on:  # Engine is on
+                # Movement
                 if index_action_dictionary[action] == 'south':  # south
                     if row != max_row:
                         moved = True
-                    row_to = min(row + 1, max_row)
+                    row = min(row + 1, max_row)
                 elif index_action_dictionary[action] == 'north':  # north
                     if row != 0:
                         moved = True
-                    row_to = max(row - 1, 0)
+                    row = max(row - 1, 0)
                 if index_action_dictionary[action] == 'east' and self.desc[1 + row, 2 * col + 2] == b":":  # east
                     if col != max_col:
                         moved = True
-                    col_to = min(col + 1, max_col)
+                    col = min(col + 1, max_col)
                 elif index_action_dictionary[action] == 'west' and self.desc[1 + row, 2 * col] == b":":  # west
                     if col != 0:
                         moved = True
-                    col_to = max(col - 1, 0)
+                    col = max(col - 1, 0)
 
-                # check for collision definitions and determine movement dest
-                if not self.collission_limit:  # ignore
-                    col, row = col_to, row_to
-                elif self.collission_limit:
+                # Check for collisions
+                if self.collision_sensitive_domain and moved:
                     if self.collided[taxi] == 0:
-                        col, row = col_to, row_to
-                        if len([i for i in range(len(taxis)) if taxis[i] == taxis[taxi]]) > 1:  # there is a collision
+                        # Check if the number of taxis on the destination location is greater than 1
+                        if len([i for i in range(self.num_taxis) if taxis_locations[i] == [row, col]]) > 0:
                             if self.option_to_standby:
                                 moved = False
+                                action = self.action_index_dictionary['standby']
                             else:
-                                self.collided[[i for i in range(len(taxis)) if taxis[i] == taxis[taxi]]] = 1
-                        else:  # there wasn't a collision
-                            col, row = col_to, row_to
-                    else:
-                        continue
+                                self.collided[[i for i in range(len(taxis_locations)) if taxis_locations[i] ==
+                                               [row, col]]] = 1
+                                self.collided[taxi] = 1
+                                reward = taxi_env_rewards['collision']
+                if self.collision_sensitive_domain and self.collided[taxi] == 1:  # Taxi is already collided
+                    pass
 
-                # pickup/dropoff
-                elif index_action_dictionary[action] == 'pickup':  # pickup
+                # Pickup
+                elif index_action_dictionary[action] == 'pickup':
                     successful_pickup = False
-                    for i, loc in enumerate(pass_loc):
-                        if loc == 0 and taxi_loc == pass_start[i] and self.is_place_on_taxi(pass_loc, taxi):
-                            pass_loc[i] = taxi + 1
+                    for i, location in enumerate(passengers_locations):
+                        # Check if we can take this passenger
+                        if location == 0 and taxi_location == passengers_start_locations[i] and self.is_place_on_taxi(
+                                passengers_locations, taxi):
+                            passengers_locations[i] = taxi + 1
                             successful_pickup = True
-                            reward = multitaxifuel_rewards_w_idle['pickup']
+                            reward = taxi_env_rewards['pickup']
                     if not successful_pickup:  # passenger not at location
-                        reward = multitaxifuel_rewards_w_idle['bad_pickup']
-                elif index_action_dictionary[action] == 'dropoff':  # dropoff
-                    successful_dropoff = False
-                    for i, loc in enumerate(pass_loc):  # at destination
-                        if loc == taxi + 1 and taxi_loc == destinations[i]:
-                            pass_loc[i] = -1
-                            reward = multitaxifuel_rewards_w_idle['final_dropoff']
-                            successful_dropoff = True
-                        elif loc == taxi + 1:  # drops off passenger
-                            self.passengers_locations[i] = 0
-                            pass_loc[i] = taxi_loc
-                            successful_dropoff = True
-                            reward = multitaxifuel_rewards_w_idle['intermediate_dropoff']
-                    if not successful_dropoff:  # not carrying a passenger
-                        reward = multitaxifuel_rewards_w_idle['bad_dropoff']
-                    # Turning engine off
-                    elif index_action_dictionary[action] == 'turn_engine_off':
-                        reward = multitaxifuel_rewards_w_idle['turn_engine_off']
-                        self.engine_status_list[taxi] = False
-                    elif index_action_dictionary[action] == 'standby':  # standing by engine is on
-                        reward = multitaxifuel_rewards_w_idle['standby_engine_on']
-                    # taxi refuel
-                    elif index_action_dictionary[action] == 'refuel':
-                        if taxi_loc in self.fuel_stations:
-                            if self.desc[taxi_loc] == self.fuel_type_list[taxi]:
-                                fuel = self.max_fuel
-                        else:
-                            reward = multitaxifuel_rewards_w_idle['bad_refuel']
+                        reward = taxi_env_rewards['bad_pickup']
 
-            # fuel consumption
+                # Dropoff
+                elif index_action_dictionary[action] == 'dropoff':
+                    successful_dropoff = False
+                    for i, location in enumerate(passengers_locations):  # at destination
+                        # Check if we have the passenger and we are at his destination
+                        if location == taxi + 1 and taxi_location == destinations[i]:
+                            passengers_locations[i] = -1
+                            reward = taxi_env_rewards['final_dropoff']
+                            successful_dropoff = True
+                        elif location == taxi + 1:  # drops off passenger not at destination
+                            passengers_locations[i] = 0
+                            successful_dropoff = True
+                            reward = taxi_env_rewards['intermediate_dropoff']
+                    if not successful_dropoff:  # not carrying a passenger
+                        reward = taxi_env_rewards['bad_dropoff']
+
+                # Turning engine off
+                elif index_action_dictionary[action] == 'turn_engine_off':
+                    reward = taxi_env_rewards['turn_engine_off']
+                    self.engine_status_list[taxi] = 0
+
+                # Standby with engine on
+                elif index_action_dictionary[action] == 'standby':
+                    reward = taxi_env_rewards['standby_engine_on']
+
+                # taxi refuel
+                elif index_action_dictionary[action] == 'refuel':
+                    if self.at_valid_fuel_station(taxi, taxis_locations):
+                        fuel = self.max_fuel
+                    else:
+                        reward = taxi_env_rewards['bad_refuel']
+
+            # Here we have finished checking for action for taxi-i
+            # Fuel consumption
             if moved:
                 if fuel == 0:
-                    reward = multitaxifuel_rewards_w_idle['no_fuel']
+                    reward = taxi_env_rewards['no_fuel']
                 else:
                     fuel = max(0, fuel - 1)
-                    taxis[taxi] = [row, col]
+                    taxis_locations[taxi] = [row, col]
                     fuels[taxi] = fuel
-            if not moved and action < 4:
-                reward = multitaxifuel_rewards_w_idle['hit_wall']
+            if (not moved) and action in [self.action_index_dictionary[direction] for
+                                          direction in ['north', 'south', 'west', 'east']]:
+                reward = taxi_env_rewards['hit_wall']
 
-            # check for done: we are finished if all the passengers are at their destinations
-            done = all(loc == -1 for loc in pass_loc)
+            # TODO - add feature to describe the 'done' cause
+            # check if all the passengers are at their destinations
+            done = all(loc == -1 for loc in passengers_locations)
             self.dones.append(done)
 
             # check if all taxis collided
@@ -383,82 +449,103 @@ class TaxiEnv(gym.Env):
             self.dones.append(done)
 
             rewards.append(reward)
-            self.state = [taxis, fuels, pass_start, destinations, pass_loc]
-            self.lastaction = actions
+            self.state = [taxis_locations, fuels, passengers_start_locations, destinations, passengers_locations]
+            self.last_action = actions
 
-        return self.state, rewards, any(self.dones), {}
+        return self.state, rewards, any(self.dones)
 
-    def render(self, mode='human', diag=True):
-        # renders the state of the environment
+    def render(self, mode: str = 'human') -> str:
+        """
+        Renders the domain map at the current state
+        Args:
+            mode: Demand mode (file or human watching).
 
+        Returns: Value string of writing the output
+
+        """
         outfile = StringIO() if mode == 'ansi' else sys.stdout
 
+        # Copy map to work on
         out = self.desc.copy().tolist()
         out = [[c.decode('utf-8') for c in line] for line in out]
-        taxis, fuels, pass_start, destinations, pass_locs = self.state
+
+        taxis, fuels, passengers_start_coordinates, destinations, passengers_locations = self.state
 
         colors = ['yellow', 'red', 'white', 'green', 'cyan', 'crimson', 'gray', 'magenta'] * 5
-        colored = [False for taxi in taxis]
+        colored = [False] * self.num_taxis
 
         def ul(x):
+            """returns underline instead of spaces when called"""
             return "_" if x == " " else x
 
-        for i, loc in enumerate(pass_locs):
-            if loc > 0:
-                taxi_row, taxi_col = taxis[loc - 1]
+        for i, location in enumerate(passengers_locations):
+            if location > 0:  # Passenger is on a taxi
+                taxi_row, taxi_col = taxis[location - 1]
+
+                # Coloring taxi's coordinate on the map
                 out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
-                    out[1 + taxi_row][2 * taxi_col + 1], colors[loc - 1], highlight=True, bold=True)
-                colored[loc - 1] = True
-            else:  # passenger in taxi
-                pi, pj = pass_start[i]
+                    out[1 + taxi_row][2 * taxi_col + 1], colors[location - 1], highlight=True, bold=True)
+                colored[location - 1] = True
+            else:  # Passenger isn't in a taxi
+                # Coloring passenger's coordinates on the map
+                pi, pj = passengers_start_coordinates[i]
                 out[1 + pi][2 * pj + 1] = utils.colorize(out[1 + pi][2 * pj + 1], 'blue', bold=True)
 
         for i, taxi in enumerate(taxis):
-            if not colored[i]:
-                if self.collided[i] == 0:
-                    taxi_row, taxi_col = taxi
-                    out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
-                        ul(out[1 + taxi_row][2 * taxi_col + 1]), colors[i], highlight=True)
-                else:
-                    taxi_row, taxi_col = taxi
-                    out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
-                        ul(out[1 + taxi_row][2 * taxi_col + 1]), 'gray', highlight=True)
+            if self.collided[i] == 0:  # Taxi isn't collided
+                taxi_row, taxi_col = taxi
+                out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
+                    ul(out[1 + taxi_row][2 * taxi_col + 1]), colors[i], highlight=True)
+            else:  # Collided!
+                taxi_row, taxi_col = taxi
+                out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
+                    ul(out[1 + taxi_row][2 * taxi_col + 1]), 'gray', highlight=True)
 
         for dest in destinations:
             di, dj = dest
             out[1 + di][2 * dj + 1] = utils.colorize(out[1 + di][2 * dj + 1], 'magenta')
         outfile.write("\n".join(["".join(row) for row in out]) + "\n")
 
-        if self.lastaction is not None:
+        if self.last_action is not None:
             moves = all_action_names
-            output = [moves[i] for i in self.lastaction]
+            output = [moves[i] for i in self.last_action]
             outfile.write("  ({})\n".format(' ,'.join(output)))
         for i, taxi in enumerate(taxis):
-            outfile.write("Taxi{}-{}: Fuel: {}, Location: ({},{}), Collided: {}\n".format(i + 1, colors[i],
+            outfile.write("Taxi{}-{}: Fuel: {}, Location: ({},{}), Collided: {}\n".format(i + 1, colors[i].upper(),
                                                                                           fuels[i], taxi[0], taxi[1],
                                                                                           self.collided[i] == 1))
-        for i, loc in enumerate(pass_locs):
-            start = tuple(pass_start[i])
+        for i, location in enumerate(passengers_locations):
+            start = tuple(passengers_start_coordinates[i])
             end = tuple(destinations[i])
-            if loc < 0:
+            if location < 0:
                 outfile.write("Passenger{}: Location: Arrived!, Destination: {}\n".format(i + 1, end))
-            if loc == 0:
+            if location == 0:
                 outfile.write("Passenger{}: Location: {}, Destination: {}\n".format(i + 1, start, end))
             else:
-                outfile.write("Passenger{}: Location: Taxi{}, Destination: {}\n".format(i + 1, loc, end))
+                outfile.write("Passenger{}: Location: Taxi{}, Destination: {}\n".format(i + 1, location, end))
 
         # No need to return anything for human
         if mode != 'human':
             with closing(outfile):
                 return outfile.getvalue()
 
-    def partial_observations(self, state):
+    @staticmethod
+    def partial_observations(state: list) -> list:
+        """
+        Get partial observation of state.
+        Args:
+            state: state of the domain (taxis, fuels, passengers_start_coordinates, destinations, passengers_locations)
+
+        Returns: list of observations s.t each taxi sees only itself
+
+        """
+
         def flatten(x):
             return [item for sub in x for item in sub]
 
         observations = []
-        taxis, fuels, pass_start, dest, pass_loc = state
-        pass_info = flatten(pass_start) + flatten(dest) + pass_loc
+        taxis, fuels, passengers_start_locations, passengers_destinations, passengers_locations = state
+        pass_info = flatten(passengers_start_locations) + flatten(passengers_destinations) + passengers_locations
 
         for i in range(len(taxis)):
             obs = taxis[i] + [fuels[i]] + pass_info
@@ -466,13 +553,26 @@ class TaxiEnv(gym.Env):
             observations.append(obs)
         return observations
 
-    def get_observation(self, state, agent_index):
+    @staticmethod
+    def get_observation(state: list, agent_index: int) -> np.array:
+        """
+        Takes only the observation of the specified agent.
+        Args:
+            state: state of the domain (taxis, fuels, passengers_start_coordinates, destinations, passengers_locations)
+            agent_index:
+
+        Returns: observation of the specified agent (state wise)
+
+        """
+
         def flatten(x):
             return [item for sub in x for item in sub]
 
-        taxis, fuels, pass_start, dest, pass_loc = state
-        pass_info = flatten(pass_start) + flatten(dest) + pass_loc
+        taxis, fuels, passengers_start_locations, passengers_destinations, passengers_locations = state
+        passengers_information = flatten(passengers_start_locations) + flatten(
+            passengers_destinations) + passengers_locations
 
-        obs = taxis[agent_index] + [fuels[agent_index]] + pass_info
-        obs = np.reshape(obs, [1, len(obs)])
-        return obs
+        observations = taxis[agent_index] + [fuels[agent_index]] + passengers_information
+        observations = np.reshape(observations, [1, len(observations)])
+
+        return observations
