@@ -287,7 +287,7 @@ class TaxiEnv(gym.Env):
                 elif self.collission_limit:
                     if self.collided[taxi] == 0:
                         col, row = col_to, row_to
-                        if len([i for i in range(len(taxis)) if taxis[i] == taxis[taxi]]) > 1: #there is a collision
+                        if len([i for i in range(len(taxis)) if (taxis[i] == [row, col])]) > 1: #there is a collision
                             if self.option_to_standby:
                                 moved = False
                             else:
@@ -396,7 +396,7 @@ class TaxiEnv(gym.Env):
                 else:
                     taxi_row, taxi_col = taxi
                     out[1 + taxi_row][2 * taxi_col + 1] = utils.colorize(
-                        ul(out[1 + taxi_row][2 * taxi_col + 1]), 'white', highlight=True)
+                        ul(out[1 + taxi_row][2 * taxi_col + 1]), 'gray', highlight=True)
 
         for dest in destinations:
             di, dj = dest
