@@ -574,7 +574,6 @@ class TaxiEnv(gym.Env):
         Returns: observation of the specified agent (state wise)
 
         """
-
         def flatten(x):
             return [item for sub in x for item in sub]
 
