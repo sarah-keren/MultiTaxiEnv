@@ -570,7 +570,7 @@ class TaxiEnv(gym.Env):
         Takes only the observation of the specified agent.
         Args:
             state: state of the domain (taxis, fuels, passengers_start_coordinates, destinations, passengers_locations)
-            agent_index:
+            agent_index: 
 
         Returns: observation of the specified agent (state wise)
 
