@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # TODO - Update Notebook
+# TODO - Write unit tests for all functions
 
 import sys
 
@@ -9,9 +10,7 @@ from contextlib import closing
 from io import StringIO
 from gym import utils
 from gym.utils import seeding
-from gym.envs.toy_text import discrete
 import numpy as np
-import itertools
 import random
 from .config import taxi_env_rewards, base_available_actions, all_action_names
 
@@ -42,8 +41,8 @@ class TaxiEnv(gym.Env):
     A list (taxis, fuels, pass_start, destinations, pass_locs):
         taxis:                  a list of coordinates of each taxi
         fuels:                  a list of fuels for each taxi
-        pass_start:             a list of startinig coordinates for each passenger (current position or last available)
-        destinations:           a list of destination coordiniates for each passenger
+        pass_start:             a list of starting coordinates for each passenger (current position or last available)
+        destinations:           a list of destination coordinates for each passenger
         passengers_locations:   a list of locations of each passenger.
                                 -1 means delivered
                                 0 means not picked up
@@ -93,7 +92,7 @@ class TaxiEnv(gym.Env):
     - yellow: empty taxi
     - green: full taxi
     - other letters (R, G, Y and B): locations for passengers and destinations
-    Main class to be charactarized with hyper-parameters.
+    Main class to be characterized with hyper-parameters.
     """
 
     metadata = {'render.modes': ['human', 'ansi']}
@@ -168,7 +167,7 @@ class TaxiEnv(gym.Env):
 
         self.option_to_standby = option_to_stand_by
 
-        # A list to indicate wether the engine of taxi i is on (1) or off (0), all taxis start as on.
+        # A list to indicate whether the engine of taxi i is on (1) or off (0), all taxis start as on.
         self.engine_status_list = list(np.ones(num_taxis).astype(bool))
         self.num_passengers = num_passengers
 
@@ -204,7 +203,7 @@ class TaxiEnv(gym.Env):
             - refuel all taxis
             - random get destinations.
             - random locate passengers.
-            - preserve other defenitions of the environment (collision, capacity...)
+            - preserve other definitions of the environment (collision, capacity...)
             - all engines turn on.
         Args:
 
@@ -219,7 +218,7 @@ class TaxiEnv(gym.Env):
         passengers_destinations = [random.choice([x for x in self.passengers_locations if x != start])
                                    for start in passengers_start_location]
 
-        # Status of each passenger: deliverd (-1), in_taxi (positive number), waiting (0)
+        # Status of each passenger: delivered (-1), in_taxi (positive number), waiting (0)
         passengers_status = [0 for _ in range(self.num_passengers)]
         self.state = [taxis_locations, fuels, passengers_start_location, passengers_destinations, passengers_status]
 
@@ -252,7 +251,7 @@ class TaxiEnv(gym.Env):
             available_action_list += ['turn_engine_on', 'turn_engine_off', 'standby']
 
         # TODO - when we return dictionary per taxi we can't longer assume that on np.inf fuel
-        #  means no limitted fuel for all the taxis
+        #  means no limited fuel for all the taxis
         if not self.max_fuel[0] == np.inf:
             available_action_list.append('refuel')
 
@@ -260,13 +259,10 @@ class TaxiEnv(gym.Env):
         available_actions_indexes = [action_index_dictionary[action] for action in available_action_list]
         index_action_dictionary = dict((key, value) for key, value in base_dictionary.items())
 
-        return available_actions_indexes, index_action_dictionary, action_index_dictionary
+        return list(set(available_actions_indexes)), index_action_dictionary, action_index_dictionary
 
     def get_available_actions_dictionary(self) -> (list, dict):
         """
-
-        TODO: Later versions - maybe return an action-dictionary for each taxi individually.
-
         Returns: list of available actions and index->action dictionary for all actions.
 
         """
@@ -274,7 +270,7 @@ class TaxiEnv(gym.Env):
 
     def is_place_on_taxi(self, passengers_locations: np.array, taxi_index: int) -> bool:
         """
-        Checks if on taxi number 'taxi_index' there is room for another passenger.
+        Checks if there is room for another passenger on taxi number 'taxi_index'.
         Args:
             passengers_locations: list of all passengers locations
             taxi_index: index of the desired taxi
@@ -282,8 +278,21 @@ class TaxiEnv(gym.Env):
         Returns: Whether there is a place (True) or not (False)
 
         """
-        return len([location for location in passengers_locations if location == (taxi_index + 1)]) < \
-               self.taxis_capacity[taxi_index]
+        return (len([location for location in passengers_locations if location == (taxi_index + 1)]) <
+                self.taxis_capacity[taxi_index])
+
+    def map_at_location(self, location: list) -> str:
+        """
+        Returns the map character on the specified coordinates of the grid.
+        Args:
+            location: location to check [row, col]
+
+        Returns: character on specific location on the map
+
+        """
+        domain_map = self.desc.copy().tolist()
+        row, col = location[0], location[1]
+        return domain_map[row + 1][2 * col + 1].decode(encoding='UTF-8')
 
     def at_valid_fuel_station(self, taxi: int, taxis_locations: list) -> bool:
         """
@@ -295,7 +304,7 @@ class TaxiEnv(gym.Env):
 
         """
         return (taxis_locations[taxi] in self.fuel_stations and
-                self.desc[taxis_locations[taxi]] == self.fuel_type_list[taxi])
+                self.map_at_location(taxis_locations[taxi]) == self.fuel_type_list[taxi])
 
     def step(self, actions: list) -> (list, list, bool):
         """
@@ -323,7 +332,7 @@ class TaxiEnv(gym.Env):
             if self.collided[taxi] == 1:
                 continue
 
-            taxis_locations, fuels, passengers_start_locations, destinations, passengers_locations = self.state
+            taxis_locations, fuels, passengers_start_locations, destinations, passengers_status = self.state
 
             # If the taxi is out of fuel, it can't perform a step
             if fuels[taxi] == 0 and not self.at_valid_fuel_station(taxi, taxis_locations):
@@ -380,11 +389,11 @@ class TaxiEnv(gym.Env):
                 # Pickup
                 elif index_action_dictionary[action] == 'pickup':
                     successful_pickup = False
-                    for i, location in enumerate(passengers_locations):
+                    for i, location in enumerate(passengers_status):
                         # Check if we can take this passenger
                         if location == 0 and taxi_location == passengers_start_locations[i] and self.is_place_on_taxi(
-                                passengers_locations, taxi):
-                            passengers_locations[i] = taxi + 1
+                                passengers_status, taxi):
+                            passengers_status[i] = taxi + 1
                             successful_pickup = True
                             reward = taxi_env_rewards['pickup']
                     if not successful_pickup:  # passenger not at location
@@ -393,16 +402,17 @@ class TaxiEnv(gym.Env):
                 # Dropoff
                 elif index_action_dictionary[action] == 'dropoff':
                     successful_dropoff = False
-                    for i, location in enumerate(passengers_locations):  # at destination
+                    for i, location in enumerate(passengers_status):  # at destination
                         # Check if we have the passenger and we are at his destination
                         if location == taxi + 1 and taxi_location == destinations[i]:
-                            passengers_locations[i] = -1
+                            passengers_status[i] = -1
                             reward = taxi_env_rewards['final_dropoff']
                             successful_dropoff = True
                         elif location == taxi + 1:  # drops off passenger not at destination
-                            passengers_locations[i] = 0
+                            passengers_status[i] = 0
                             successful_dropoff = True
                             reward = taxi_env_rewards['intermediate_dropoff']
+                            passengers_start_locations[i] = taxi_location
                     if not successful_dropoff:  # not carrying a passenger
                         reward = taxi_env_rewards['bad_dropoff']
 
@@ -415,13 +425,6 @@ class TaxiEnv(gym.Env):
                 elif index_action_dictionary[action] == 'standby':
                     reward = taxi_env_rewards['standby_engine_on']
 
-                # taxi refuel
-                elif index_action_dictionary[action] == 'refuel':
-                    if self.at_valid_fuel_station(taxi, taxis_locations):
-                        fuel = self.max_fuel
-                    else:
-                        reward = taxi_env_rewards['bad_refuel']
-
             # Here we have finished checking for action for taxi-i
             # Fuel consumption
             if moved:
@@ -431,13 +434,21 @@ class TaxiEnv(gym.Env):
                     fuel = max(0, fuel - 1)
                     taxis_locations[taxi] = [row, col]
                     fuels[taxi] = fuel
+
             if (not moved) and action in [self.action_index_dictionary[direction] for
                                           direction in ['north', 'south', 'west', 'east']]:
                 reward = taxi_env_rewards['hit_wall']
 
+            # taxi refuel
+            if index_action_dictionary[action] == 'refuel':
+                if self.at_valid_fuel_station(taxi, taxis_locations):
+                    fuels[taxi] = self.max_fuel[taxi]
+                else:
+                    reward = taxi_env_rewards['bad_refuel']
+
             # TODO - add feature to describe the 'done' cause
             # check if all the passengers are at their destinations
-            done = all(loc == -1 for loc in passengers_locations)
+            done = all(loc == -1 for loc in passengers_status)
             self.dones.append(done)
 
             # check if all taxis collided
@@ -449,7 +460,7 @@ class TaxiEnv(gym.Env):
             self.dones.append(done)
 
             rewards.append(reward)
-            self.state = [taxis_locations, fuels, passengers_start_locations, destinations, passengers_locations]
+            self.state = [taxis_locations, fuels, passengers_start_locations, destinations, passengers_status]
             self.last_action = actions
 
         return self.state, rewards, any(self.dones)
