@@ -5,7 +5,7 @@ from gym.utils import seeding
 import numpy as np
 from multitaxienv.config import TAXI_ENVIRONMENT_REWARDS, BASE_AVAILABLE_ACTIONS, ALL_ACTIONS_NAMES
 from gym.spaces import Box, Tuple, MultiDiscrete
-from utils import rendering_utils, basic_utils, actions_utils, \
+from multitaxienv.utils import rendering_utils, basic_utils, actions_utils, \
     observation_utils, reward_utils
 
 orig_MAP = [
