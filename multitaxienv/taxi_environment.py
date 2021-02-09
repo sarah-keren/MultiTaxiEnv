@@ -55,7 +55,7 @@ simple_MAP = [
 # TODO Create another notebook for all the changes in the environment
 
 # supporting rllib and gym via this alternating variable
-environment_type = 'rllib'
+environment_type = 'gym'
 if environment_type == 'rllib':
     from ray.rllib.env import MultiAgentEnv
     environment_to_derive_from = MultiAgentEnv
