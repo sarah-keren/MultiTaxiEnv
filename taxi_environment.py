@@ -125,7 +125,7 @@ class TaxiEnv:
 
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self, _=0, num_taxis: int = 1, num_passengers: int = 1, max_fuel: list = None,
+    def __init__(self, _=0, num_taxis: int = 2, num_passengers: int = 1, max_fuel: list = None,
                  domain_map: list = None, taxis_capacity: list = None, collision_sensitive_domain: bool = True,
                  fuel_type_list: list = None, option_to_stand_by: bool = False):
         """
