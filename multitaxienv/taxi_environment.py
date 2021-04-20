@@ -3,7 +3,7 @@
 import gym
 from gym.utils import seeding
 import numpy as np
-from config import TAXI_ENVIRONMENT_REWARDS, BASE_AVAILABLE_ACTIONS, ALL_ACTIONS_NAMES
+from multitaxienv.config import TAXI_ENVIRONMENT_REWARDS, BASE_AVAILABLE_ACTIONS, ALL_ACTIONS_NAMES
 from gym.spaces import Box, Tuple, MultiDiscrete
 import random
 import sys
