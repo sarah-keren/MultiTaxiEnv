@@ -971,5 +971,7 @@ class TaxiEnv:
                      self.passenger_destination_l1_distance(passenger_index, taxi_current_row, taxi_current_col))
 
 
-env = TaxiEnv()
+env = TaxiEnv(num_taxis=2, num_passengers=2, max_fuel=None,
+              taxis_capacity=None, collision_sensitive_domain=False,
+              fuel_type_list=None, option_to_stand_by=True)
 env.render()

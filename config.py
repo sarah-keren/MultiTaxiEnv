@@ -53,7 +53,9 @@ COLOR_MAP = {
 }
 
 ALL_ACTIONS_NAMES = ['south', 'north', 'east', 'west',
-                     'pickup', 'dropoff', 'refuel']
+                     'pickup', 'dropoff', 'refuel', 'turn_engine_on', 'turn_engine_off',
+                     'standby',
+                     'refuel']
 
 """,
                     'turn_engine_on', 'turn_engine_off',
